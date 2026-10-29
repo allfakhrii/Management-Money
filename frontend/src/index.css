@@ -1,0 +1,26 @@
+@import "./styles/tokens.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: var(--color-bg-app);
+    color: var(--color-text-main);
+  }
+
+  button, 
+  [role="button"],
+  select,
+  a[href] {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  [role="button"]:disabled,
+  select:disabled,
+  input:disabled {
+    cursor: not-allowed;
+  }
+}

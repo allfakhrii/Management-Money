@@ -1,0 +1,61 @@
+:root {
+  /* =========================================
+     1. PRIMITIVE LAYER (Nilai Dasar)
+     ========================================= */
+  --slate-50: #f8fafc;
+  --slate-100: #f1f5f9;
+  --slate-200: #e2e8f0;
+  --slate-300: #cbd5e1;
+  --slate-400: #94a3b8;
+  --slate-500: #64748b;
+  --slate-600: #475569;
+  --slate-700: #334155;
+  --slate-800: #1e293b;
+  --slate-900: #0f172a;
+
+  --emerald-50: #ecfdf5;
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+
+  --rose-50: #fff1f2;
+  --rose-600: #e11d48;
+  --rose-700: #be123c;
+
+  --amber-50: #fffbeb;
+  --amber-600: #d97706;
+
+  /* =========================================
+     2. SEMANTIC LAYER (Tujuan & Makna)
+     ========================================= */
+  --color-bg-app: var(--slate-50);
+  --color-bg-card: #ffffff;
+  --color-text-main: var(--slate-900);
+  --color-text-muted: var(--slate-500);
+  --color-text-subtle: var(--slate-400);
+
+  --color-brand-primary: var(--slate-900);
+  --color-brand-contrast: #ffffff;
+
+  --color-inflow-bg: var(--emerald-50);
+  --color-inflow-text: var(--emerald-700);
+
+  --color-outflow-bg: var(--rose-50);
+  --color-outflow-text: var(--rose-700);
+
+  --color-border-default: var(--slate-200);
+  --color-border-subtle: var(--slate-100);
+
+  /* Radius Scales */
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --radius-2xl: 1.25rem;
+
+  /* =========================================
+     3. COMPONENT LAYER (Khusus Komponen)
+     ========================================= */
+  --header-height: 4rem;
+  --card-radius: var(--radius-2xl);
+  --tap-target-min: 44px;
+}
