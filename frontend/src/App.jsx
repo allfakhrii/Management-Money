@@ -73,6 +73,7 @@ export default function App() {
 
   // Navigation Tab State: "dashboard" | "recap"
   const [activeTab, setActiveTab] = useState("dashboard");
+  const [dbStatus, setDbStatus] = useState(null);
 
   // Inisialisasi Sesi Pengguna saat Aplikasi Dimuat
   useEffect(() => {
@@ -80,6 +81,19 @@ export default function App() {
       try {
         const user = await fetchCurrentUser();
         setCurrentUser(user);
+
+        // Cek status koneksi database
+        try {
+          const apiUrl = import.meta.env.VITE_API_BASE_URL ||
+            (typeof window !== "undefined" && window.location.hostname !== "localhost" && window.location.hostname !== "127.0.0.1" ? "/api" : "http://localhost:8000/api");
+          const hRes = await fetch(`${apiUrl}/health`);
+          if (hRes.ok) {
+            const hData = await hRes.json();
+            setDbStatus(hData.database);
+          }
+        } catch {
+          // Abaikan kegagalan health check
+        }
       } catch {
         setCurrentUser(null);
       } finally {
@@ -347,9 +361,16 @@ export default function App() {
               </button>
             </div>
 
-            <div className="hidden sm:flex items-center gap-2 text-xs text-slate-500">
+            <div className="hidden sm:flex items-center gap-2 text-xs">
               <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Sinkronisasi Otomatis Real-time</span>
+              {dbStatus === "supabase_postgresql" ? (
+                <span className="font-semibold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-lg shadow-2xs flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                  <span>Cloud DB Terhubung (Supabase)</span>
+                </span>
+              ) : (
+                <span className="text-slate-500 font-medium">Sinkronisasi Otomatis Real-time</span>
+              )}
             </div>
           </div>
 

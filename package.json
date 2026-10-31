@@ -7,7 +7,7 @@
     "install:frontend": "npm install --prefix frontend",
     "install:backend": "pip install -r backend/requirements.txt",
     "install:all": "npm install && npm run install:frontend && npm run install:backend",
-    "dev:backend": "cd backend && (./venv/bin/uvicorn main:app --reload --port 8000 2>/dev/null || venv\\\\Scripts\\\\uvicorn main:app --reload --port 8000 2>/dev/null || uvicorn main:app --reload --port 8000)",
+    "dev:backend": "cd backend && (PYTHONUNBUFFERED=1 ./venv/bin/uvicorn main:app --reload --port 8000 || PYTHONUNBUFFERED=1 venv\\\\Scripts\\\\uvicorn main:app --reload --port 8000 || PYTHONUNBUFFERED=1 uvicorn main:app --reload --port 8000)",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev": "concurrently --kill-others-on-fail -n \"BACKEND,FRONTEND\" -c \"magenta,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\""
   },

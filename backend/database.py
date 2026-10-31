@@ -30,7 +30,12 @@ def load_env_file():
 load_env_file()
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
+SUPABASE_KEY = (
+    os.environ.get("SUPABASE_KEY")
+    or os.environ.get("SUPABASE_SECRET_KEY")
+    or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
+    or os.environ.get("SUPABASE_ANON_KEY")
+)
 
 supabase_client = None
 if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL.startswith("http"):

@@ -41,7 +41,12 @@ CREATE INDEX IF NOT EXISTS idx_transactions_user ON public.transactions(user_id)
 CREATE INDEX IF NOT EXISTS idx_transactions_created ON public.transactions(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_savings_goals_user ON public.savings_goals(user_id);
 
--- 5. Masukkan Akun Demo Awal (Email: demo@finora.id, Sandi: password123)
+-- 5. Nonaktifkan RLS agar backend API leluasa menulis data
+ALTER TABLE public.users DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.transactions DISABLE ROW LEVEL SECURITY;
+ALTER TABLE public.savings_goals DISABLE ROW LEVEL SECURITY;
+
+-- 6. Masukkan Akun Demo Awal (Email: demo@finora.id, Sandi: password123)
 DO $$
 DECLARE
     v_demo_id UUID := '00000000-0000-0000-0000-000000000001';
