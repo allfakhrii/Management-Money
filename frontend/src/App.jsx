@@ -14,6 +14,7 @@ import {
   LayoutDashboard,
   Scale,
   CalendarRange,
+  LogOut,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
@@ -26,6 +27,8 @@ import {
   depositToSavingsGoal,
   deleteSavingsGoal,
 } from "./api/transactions";
+import { fetchCurrentUser, logoutUser } from "./api/auth";
+import { AuthScreen } from "./components/AuthScreen";
 import { AnimatedCounter } from "./components/AnimatedCounter";
 import { CategoryChart } from "./components/CategoryChart";
 import { AddTransactionModal } from "./components/AddTransactionModal";
@@ -41,6 +44,8 @@ import { Button } from "./components/ui/Button";
 import { Badge } from "./components/ui/Badge";
 
 export default function App() {
+  const [currentUser, setCurrentUser] = useState(null);
+  const [isAuthChecking, setIsAuthChecking] = useState(true);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [transactions, setTransactions] = useState([]);
   const [savingsGoals, setSavingsGoals] = useState([]);
@@ -69,7 +74,23 @@ export default function App() {
   // Navigation Tab State: "dashboard" | "recap"
   const [activeTab, setActiveTab] = useState("dashboard");
 
+  // Inisialisasi Sesi Pengguna saat Aplikasi Dimuat
+  useEffect(() => {
+    async function initAuth() {
+      try {
+        const user = await fetchCurrentUser();
+        setCurrentUser(user);
+      } catch {
+        setCurrentUser(null);
+      } finally {
+        setIsAuthChecking(false);
+      }
+    }
+    initAuth();
+  }, []);
+
   const loadData = useCallback(async () => {
+    if (!currentUser) return;
     try {
       setLoading(true);
       setError(null);
@@ -86,18 +107,33 @@ export default function App() {
       setSummary(sumData);
       setSavingsGoals(goalsData);
     } catch (err) {
-      setError(err.message || "Koneksi ke backend server gagal.");
+      if (err.message && err.message.toLowerCase().includes("autentikasi")) {
+        setCurrentUser(null);
+      } else {
+        setError(err.message || "Koneksi ke backend server gagal.");
+      }
     } finally {
       setLoading(false);
     }
-  }, [search, typeFilter, categoryFilter]);
+  }, [currentUser, search, typeFilter, categoryFilter]);
 
   useEffect(() => {
+    if (!currentUser) return;
     const timer = setTimeout(() => {
       loadData();
     }, 200);
     return () => clearTimeout(timer);
-  }, [loadData]);
+  }, [currentUser, loadData]);
+
+  // Handler Autentikasi Keluar
+  const handleLogout = async () => {
+    if (window.confirm("Apakah Anda yakin ingin keluar dari akun Finora?")) {
+      await logoutUser();
+      setCurrentUser(null);
+      setTransactions([]);
+      setSavingsGoals([]);
+    }
+  };
 
   // Handler Transaksi
   const handleCreateTransaction = async (payload) => {
@@ -145,6 +181,10 @@ export default function App() {
     if (!list.includes("Investasi")) list.push("Investasi");
     return Array.from(new Set(list));
   }, [summary.category_breakdown]);
+
+  if (!isAuthChecking && !currentUser) {
+    return <AuthScreen onLoginSuccess={(user) => setCurrentUser(user)} />;
+  }
 
   return (
     <>
@@ -241,6 +281,33 @@ export default function App() {
                 <span className="hidden sm:inline">Tambah Transaksi</span>
                 <span className="sm:hidden">Tambah</span>
               </Button>
+
+              {/* User Profile & Logout */}
+              <div className="flex items-center gap-1.5 sm:gap-2 pl-1.5 sm:pl-3 border-l border-slate-200">
+                <div className="flex items-center gap-1.5">
+                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-slate-900 text-white flex items-center justify-center font-bold text-xs uppercase shadow-xs shrink-0 select-none">
+                    {currentUser?.full_name ? currentUser.full_name.charAt(0) : "U"}
+                  </div>
+                  <div className="hidden lg:block text-left min-w-0 max-w-[130px]">
+                    <p className="text-xs font-bold text-slate-900 truncate leading-tight">
+                      {currentUser?.full_name || "Pengguna"}
+                    </p>
+                    <p className="text-[10px] text-slate-400 truncate leading-tight">
+                      {currentUser?.email || ""}
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  title="Keluar dari akun"
+                  aria-label="Keluar dari akun"
+                  className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors shrink-0"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
         </header>

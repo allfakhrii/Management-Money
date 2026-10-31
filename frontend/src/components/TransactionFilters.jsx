@@ -1,6 +1,6 @@
-import React from "react";
-import { Search, X, Download, SlidersHorizontal } from "lucide-react";
-import { getExportCsvUrl } from "../api/transactions";
+import React, { useState } from "react";
+import { Search, X, Download, SlidersHorizontal, Loader2 } from "lucide-react";
+import { downloadExportCsv } from "../api/transactions";
 
 export function TransactionFilters({
   search,
@@ -12,6 +12,18 @@ export function TransactionFilters({
   categories = [],
   totalResults = 0,
 }) {
+  const [isExporting, setIsExporting] = useState(false);
+
+  const handleExport = async () => {
+    try {
+      setIsExporting(true);
+      await downloadExportCsv();
+    } catch (err) {
+      alert(err.message || "Gagal mengunduh file CSV");
+    } finally {
+      setIsExporting(false);
+    }
+  };
   return (
     <div className="space-y-2.5 sm:space-y-3 bg-white p-3 sm:p-4 rounded-xl border border-slate-200 mb-4 sm:mb-6 shadow-xs">
       {/* Baris Atas: Pencarian & Export CSV */}
@@ -41,14 +53,19 @@ export function TransactionFilters({
           )}
         </div>
 
-        <a
-          href={getExportCsvUrl()}
-          download="money_dashboard_export.csv"
-          className="min-h-[38px] sm:min-h-[44px] px-3 sm:px-3.5 py-1.5 sm:py-2 inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none shrink-0"
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={isExporting}
+          className="min-h-[38px] sm:min-h-[44px] px-3 sm:px-3.5 py-1.5 sm:py-2 inline-flex items-center justify-center gap-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg transition-colors focus:ring-2 focus:ring-slate-400 focus:outline-none shrink-0 disabled:opacity-50"
         >
-          <Download className="w-3.5 h-3.5" />
-          <span>Export CSV</span>
-        </a>
+          {isExporting ? (
+            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+          ) : (
+            <Download className="w-3.5 h-3.5" />
+          )}
+          <span>{isExporting ? "Mengunduh..." : "Export CSV"}</span>
+        </button>
       </div>
 
       {/* Baris Bawah: Filter Tipe & Dropdown Kategori */}

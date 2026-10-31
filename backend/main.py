@@ -1,13 +1,32 @@
-from fastapi import FastAPI, HTTPException, status, Query, Response
+from fastapi import FastAPI, HTTPException, status, Query, Response, Depends, Header
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional, Dict
+from typing import List, Literal, Optional, Dict, Any
 from datetime import datetime, timezone
 import uuid
 import csv
 import io
+import hashlib
+import secrets
+import hmac
+import base64
+import json
 
-app = FastAPI(title="Money Management & Savings Goals API", version="1.3.0")
+from database import (
+    is_supabase_active,
+    db_get_user_by_email,
+    db_get_user_by_id,
+    db_create_user,
+    db_get_transactions,
+    db_create_transaction,
+    db_delete_transaction,
+    db_get_savings_goals,
+    db_create_savings_goal,
+    db_deposit_savings_goal,
+    db_delete_savings_goal,
+)
+
+app = FastAPI(title="Finora: Money Management, Auth & Savings API", version="2.1.0")
 
 # Setup CORS agar Frontend Vite dapat berkomunikasi lancar
 app.add_middleware(
@@ -19,7 +38,84 @@ app.add_middleware(
 )
 
 # ==========================================
-# 1. MODEL TRANSAKSI
+# 1. AUTENTIKASI: SECURITY & JWT HELPERS
+# ==========================================
+SECRET_KEY = "finora-super-secret-jwt-key-2026"
+
+def hash_password(password: str) -> str:
+    salt = secrets.token_hex(16)
+    key = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt), 100000)
+    return salt + "$" + key.hex()
+
+def verify_password(stored: str, provided: str) -> bool:
+    try:
+        salt, key_hex = stored.split("$")
+        check_key = hashlib.pbkdf2_hmac("sha256", provided.encode("utf-8"), bytes.fromhex(salt), 100000)
+        return hmac.compare_digest(key_hex, check_key.hex())
+    except Exception:
+        return False
+
+def create_access_token(data: dict) -> str:
+    header = {"alg": "HS256", "typ": "JWT"}
+    payload = data.copy()
+    payload["iat"] = int(datetime.now(timezone.utc).timestamp())
+    payload["exp"] = payload["iat"] + (30 * 24 * 3600)  # 30 hari aktif
+    
+    header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip("=")
+    payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    signing_input = f"{header_b64}.{payload_b64}"
+    signature = hmac.new(SECRET_KEY.encode(), signing_input.encode(), hashlib.sha256).digest()
+    sig_b64 = base64.urlsafe_b64encode(signature).decode().rstrip("=")
+    return f"{signing_input}.{sig_b64}"
+
+def verify_token(token: str) -> Optional[dict]:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        header_b64, payload_b64, sig_b64 = parts
+        signing_input = f"{header_b64}.{payload_b64}"
+        expected_sig = hmac.new(SECRET_KEY.encode(), signing_input.encode(), hashlib.sha256).digest()
+        sig_padded = sig_b64 + "=" * (-len(sig_b64) % 4)
+        actual_sig = base64.urlsafe_b64decode(sig_padded)
+        if not hmac.compare_digest(expected_sig, actual_sig):
+            return None
+        payload_padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        payload = json.loads(base64.urlsafe_b64decode(payload_padded).decode())
+        exp = payload.get("exp")
+        if exp and exp < datetime.now(timezone.utc).timestamp():
+            return None
+        return payload
+    except Exception:
+        return None
+
+# ==========================================
+# 2. MODEL PENGGUNA (AUTH)
+# ==========================================
+class UserBase(BaseModel):
+    email: str = Field(..., min_length=3, max_length=100)
+    full_name: str = Field(..., min_length=2, max_length=100)
+
+class UserCreate(BaseModel):
+    email: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=6, max_length=100)
+    full_name: str = Field(..., min_length=2, max_length=100)
+
+class UserLogin(BaseModel):
+    email: str = Field(..., min_length=3, max_length=100)
+    password: str = Field(..., min_length=6, max_length=100)
+
+class UserResponse(UserBase):
+    id: str
+    created_at: str
+
+class AuthTokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserResponse
+
+# ==========================================
+# 3. MODEL TRANSAKSI
 # ==========================================
 TransactionType = Literal["income", "expense"]
 
@@ -34,6 +130,7 @@ class TransactionCreate(TransactionBase):
 
 class Transaction(TransactionBase):
     id: str
+    user_id: str
     created_at: str
 
 class CategoryStat(BaseModel):
@@ -50,7 +147,7 @@ class SummaryResponse(BaseModel):
     category_breakdown: List[CategoryStat]
 
 # ==========================================
-# 2. MODEL TARGET MENABUNG (SAVINGS GOALS)
+# 4. MODEL TARGET MENABUNG (SAVINGS GOALS)
 # ==========================================
 class SavingsGoalBase(BaseModel):
     title: str = Field(..., min_length=2, max_length=100)
@@ -68,11 +165,12 @@ class SavingsGoalDeposit(BaseModel):
 
 class SavingsGoal(SavingsGoalBase):
     id: str
+    user_id: str
     created_at: str
     is_completed: bool
 
 # ==========================================
-# 3. MODEL REKAPITULASI (HARIAN & BULANAN)
+# 5. MODEL REKAPITULASI (HARIAN & BULANAN)
 # ==========================================
 class RecapPeriodItem(BaseModel):
     key: str
@@ -92,101 +190,120 @@ class RecapResponse(BaseModel):
     items: List[RecapPeriodItem]
 
 # ==========================================
-# 4. DATABASE IN-MEMORY
+# 6. DEPENDENCY: VERIFIKASI PENGGUNA SAAT INI
 # ==========================================
-db_transactions: List[Transaction] = [
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Gaji Bulanan",
-        amount=12500000.0,
-        type="income",
-        category="Gaji",
-        created_at="2026-10-25T09:00:00Z"
-    ),
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Hasil Proyek Freelance UI/UX",
-        amount=4500000.0,
-        type="income",
-        category="Investasi",
-        created_at="2026-10-26T14:30:00Z"
-    ),
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Belanja Kebutuhan Pokok",
-        amount=1850000.0,
-        type="expense",
-        category="Kebutuhan",
-        created_at="2026-10-27T11:15:00Z"
-    ),
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Langganan Internet & Cloud Hosting",
-        amount=650000.0,
-        type="expense",
-        category="Tagihan",
-        created_at="2026-10-28T16:00:00Z"
-    ),
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Tiket Nonton & Makan Akhir Pekan",
-        amount=350000.0,
-        type="expense",
-        category="Hiburan",
-        created_at="2026-10-29T13:00:00Z"
-    ),
-    # Data bulan sebelumnya untuk membuktikan rekapitulasi multi-bulan
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Gaji September",
-        amount=12000000.0,
-        type="income",
-        category="Gaji",
-        created_at="2026-09-25T09:00:00Z"
-    ),
-    Transaction(
-        id=str(uuid.uuid4()),
-        title="Belanja Bulanan September",
-        amount=2100000.0,
-        type="expense",
-        category="Kebutuhan",
-        created_at="2026-09-27T10:00:00Z"
-    )
-]
-
-db_savings_goals: List[SavingsGoal] = [
-    SavingsGoal(
-        id=str(uuid.uuid4()),
-        title="Laptop Kerja Apple MacBook Pro",
-        target_amount=24000000.0,
-        current_amount=16800000.0,
-        category="Gadget",
-        target_date="2026-12-31",
-        created_at=datetime.now(timezone.utc).isoformat(),
-        is_completed=False
-    ),
-    SavingsGoal(
-        id=str(uuid.uuid4()),
-        title="Pos Cadangan Dana Darurat 6 Bulan",
-        target_amount=30000000.0,
-        current_amount=22500000.0,
-        category="Dana Darurat",
-        target_date="2027-06-30",
-        created_at=datetime.now(timezone.utc).isoformat(),
-        is_completed=False
-    )
-]
+def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Autentikasi diperlukan. Silakan masuk terlebih dahulu."
+        )
+    token = authorization.split(" ")[1]
+    payload = verify_token(token)
+    if not payload or "sub" not in payload:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Sesi login Anda telah berakhir. Silakan masuk kembali."
+        )
+    user = db_get_user_by_id(payload["sub"])
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Akun pengguna tidak ditemukan."
+        )
+    return user
 
 # ==========================================
-# 5. ENDPOINTS TRANSAKSI
+# 7. ENDPOINTS STATUS & DIAGNOSTIK
+# ==========================================
+@app.get("/api/health")
+def health_check():
+    return {
+        "status": "healthy",
+        "database": "supabase_postgresql" if is_supabase_active() else "in_memory_local",
+        "timestamp": datetime.now(timezone.utc).isoformat()
+    }
+
+# ==========================================
+# 8. ENDPOINTS AUTENTIKASI (LOGIN & LOGOUT)
+# ==========================================
+@app.post("/api/auth/register", response_model=AuthTokenResponse, status_code=status.HTTP_201_CREATED)
+def register(payload: UserCreate):
+    email_clean = payload.email.strip().lower()
+    existing = db_get_user_by_email(email_clean)
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Email sudah terdaftar. Silakan gunakan email lain atau masuk."
+        )
+    user_id = str(uuid.uuid4())
+    new_user = {
+        "id": user_id,
+        "email": email_clean,
+        "password_hash": hash_password(payload.password),
+        "full_name": payload.full_name.strip(),
+        "created_at": datetime.now(timezone.utc).isoformat()
+    }
+    saved_user = db_create_user(new_user)
+    token = create_access_token({"sub": saved_user["id"], "email": saved_user["email"]})
+    return AuthTokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse(
+            id=str(saved_user["id"]),
+            email=saved_user["email"],
+            full_name=saved_user["full_name"],
+            created_at=str(saved_user["created_at"])
+        )
+    )
+
+@app.post("/api/auth/login", response_model=AuthTokenResponse)
+def login(payload: UserLogin):
+    email_clean = payload.email.strip().lower()
+    user = db_get_user_by_email(email_clean)
+    if not user or not verify_password(user["password_hash"], payload.password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Email atau kata sandi tidak sesuai."
+        )
+    token = create_access_token({"sub": str(user["id"]), "email": user["email"]})
+    return AuthTokenResponse(
+        access_token=token,
+        token_type="bearer",
+        user=UserResponse(
+            id=str(user["id"]),
+            email=user["email"],
+            full_name=user["full_name"],
+            created_at=str(user["created_at"])
+        )
+    )
+
+@app.get("/api/auth/me", response_model=UserResponse)
+def get_me(current_user: dict = Depends(get_current_user)):
+    return UserResponse(
+        id=str(current_user["id"]),
+        email=current_user["email"],
+        full_name=current_user["full_name"],
+        created_at=str(current_user["created_at"])
+    )
+
+@app.post("/api/auth/logout")
+def logout():
+    return {"message": "Berhasil keluar dari sesi."}
+
+# ==========================================
+# 9. ENDPOINTS TRANSAKSI (PER PENGGUNA)
 # ==========================================
 @app.get("/api/transactions", response_model=List[Transaction])
 def get_transactions(
     search: Optional[str] = Query(None, description="Cari judul transaksi"),
     type: Optional[str] = Query(None, description="Filter income atau expense"),
-    category: Optional[str] = Query(None, description="Filter kategori transaksi")
+    category: Optional[str] = Query(None, description="Filter kategori transaksi"),
+    current_user: dict = Depends(get_current_user)
 ):
-    results = db_transactions
+    raw_list = db_get_transactions(str(current_user["id"]))
+    results = [Transaction(**t) for t in raw_list]
+
     if type and type in ["income", "expense"]:
         results = [t for t in results if t.type == type]
     if category and category.lower() != "semua":
@@ -198,32 +315,38 @@ def get_transactions(
     return sorted(results, key=lambda x: x.created_at, reverse=True)
 
 @app.post("/api/transactions", response_model=Transaction, status_code=status.HTTP_201_CREATED)
-def create_transaction(payload: TransactionCreate):
+def create_transaction(
+    payload: TransactionCreate,
+    current_user: dict = Depends(get_current_user)
+):
     created_date = payload.date if payload.date else datetime.now(timezone.utc).isoformat()
-    new_item = Transaction(
-        id=str(uuid.uuid4()),
-        title=payload.title,
-        amount=payload.amount,
-        type=payload.type,
-        category=payload.category,
-        created_at=created_date
-    )
-    db_transactions.append(new_item)
-    return new_item
+    new_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": str(current_user["id"]),
+        "title": payload.title,
+        "amount": payload.amount,
+        "type": payload.type,
+        "category": payload.category,
+        "created_at": created_date
+    }
+    saved = db_create_transaction(new_data)
+    return Transaction(**saved)
 
 @app.delete("/api/transactions/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_transaction(transaction_id: str):
-    global db_transactions
-    item = next((t for t in db_transactions if t.id == transaction_id), None)
-    if not item:
+def delete_transaction(
+    transaction_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    success = db_delete_transaction(transaction_id, str(current_user["id"]))
+    if not success:
         raise HTTPException(status_code=404, detail="Transaksi tidak ditemukan")
-    db_transactions = [t for t in db_transactions if t.id != transaction_id]
     return None
 
 @app.get("/api/summary", response_model=SummaryResponse)
-def get_summary():
-    total_income = sum(t.amount for t in db_transactions if t.type == "income")
-    total_expense = sum(t.amount for t in db_transactions if t.type == "expense")
+def get_summary(current_user: dict = Depends(get_current_user)):
+    user_tx = db_get_transactions(str(current_user["id"]))
+    total_income = sum(t["amount"] for t in user_tx if t["type"] == "income")
+    total_expense = sum(t["amount"] for t in user_tx if t["type"] == "expense")
     total_balance = total_income - total_expense
 
     savings_rate = 0.0
@@ -231,9 +354,10 @@ def get_summary():
         savings_rate = max(0.0, round(((total_income - total_expense) / total_income) * 100, 1))
 
     category_map = {}
-    for t in db_transactions:
-        if t.type == "expense":
-            category_map[t.category] = category_map.get(t.category, 0.0) + t.amount
+    for t in user_tx:
+        if t["type"] == "expense":
+            cat = t["category"]
+            category_map[cat] = category_map.get(cat, 0.0) + t["amount"]
 
     breakdown = []
     for cat, amt in category_map.items():
@@ -247,27 +371,28 @@ def get_summary():
         total_income=total_income,
         total_expense=total_expense,
         savings_rate=savings_rate,
-        transaction_count=len(db_transactions),
+        transaction_count=len(user_tx),
         category_breakdown=breakdown
     )
 
 @app.get("/api/export/csv")
-def export_csv():
+def export_csv(current_user: dict = Depends(get_current_user)):
+    user_tx = db_get_transactions(str(current_user["id"]))
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(["ID", "Tanggal", "Judul", "Tipe", "Kategori", "Nominal (IDR)"])
-    for t in sorted(db_transactions, key=lambda x: x.created_at, reverse=True):
-        writer.writerow([t.id, t.created_at, t.title, t.type, t.category, t.amount])
+    for t in sorted(user_tx, key=lambda x: x["created_at"], reverse=True):
+        writer.writerow([t["id"], t["created_at"], t["title"], t["type"], t["category"], t["amount"]])
 
     csv_data = output.getvalue()
     return Response(
         content=csv_data,
         media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=money_dashboard_export.csv"}
+        headers={"Content-Disposition": "attachment; filename=finora_export.csv"}
     )
 
 # ==========================================
-# 6. ENDPOINTS REKAPITULASI (HARIAN & BULANAN)
+# 10. ENDPOINTS REKAPITULASI (HARIAN & BULANAN)
 # ==========================================
 MONTH_NAMES = [
     "", "Januari", "Februari", "Maret", "April", "Mei", "Juni",
@@ -276,12 +401,14 @@ MONTH_NAMES = [
 
 @app.get("/api/recap", response_model=RecapResponse)
 def get_recap(
-    period: Literal["monthly", "daily"] = Query("monthly", description="Pilihan rekap harian atau bulanan")
+    period: Literal["monthly", "daily"] = Query("monthly", description="Pilihan rekap harian atau bulanan"),
+    current_user: dict = Depends(get_current_user)
 ):
+    raw_tx = db_get_transactions(str(current_user["id"]))
+    user_tx = [Transaction(**t) for t in raw_tx]
     grouped: Dict[str, List[Transaction]] = {}
 
-    for tx in db_transactions:
-        # Format created_at (ISO standard)
+    for tx in user_tx:
         try:
             dt = datetime.fromisoformat(tx.created_at.replace("Z", "+00:00"))
         except Exception:
@@ -311,7 +438,6 @@ def get_recap(
         grand_income += total_inc
         grand_expense += total_exp
 
-        # Format Label yang ramah pengguna
         if period == "monthly":
             year, month = k.split("-")
             month_idx = int(month)
@@ -343,70 +469,74 @@ def get_recap(
     )
 
 # ==========================================
-# 7. ENDPOINTS TARGET MENABUNG (SAVINGS GOALS)
+# 11. ENDPOINTS TARGET MENABUNG (SAVINGS GOALS)
 # ==========================================
 @app.get("/api/savings-goals", response_model=List[SavingsGoal])
-def get_savings_goals():
-    return sorted(db_savings_goals, key=lambda x: x.created_at, reverse=True)
+def get_savings_goals(current_user: dict = Depends(get_current_user)):
+    user_goals = db_get_savings_goals(str(current_user["id"]))
+    results = [SavingsGoal(**g) for g in user_goals]
+    return sorted(results, key=lambda x: x.created_at, reverse=True)
 
 @app.post("/api/savings-goals", response_model=SavingsGoal, status_code=status.HTTP_201_CREATED)
-def create_savings_goal(payload: SavingsGoalCreate):
-    new_goal = SavingsGoal(
-        id=str(uuid.uuid4()),
-        title=payload.title,
-        target_amount=payload.target_amount,
-        current_amount=payload.current_amount,
-        category=payload.category,
-        target_date=payload.target_date,
-        created_at=datetime.now(timezone.utc).isoformat(),
-        is_completed=payload.current_amount >= payload.target_amount
-    )
-    db_savings_goals.append(new_goal)
+def create_savings_goal(
+    payload: SavingsGoalCreate,
+    current_user: dict = Depends(get_current_user)
+):
+    new_data = {
+        "id": str(uuid.uuid4()),
+        "user_id": str(current_user["id"]),
+        "title": payload.title,
+        "target_amount": payload.target_amount,
+        "current_amount": payload.current_amount,
+        "category": payload.category,
+        "target_date": payload.target_date,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "is_completed": payload.current_amount >= payload.target_amount
+    }
+    saved_goal = db_create_savings_goal(new_data)
 
     if payload.current_amount > 0:
-        db_transactions.append(
-            Transaction(
-                id=str(uuid.uuid4()),
-                title=f"Setoran Awal Tabungan: {payload.title}",
-                amount=payload.current_amount,
-                type="expense",
-                category="Investasi",
-                created_at=datetime.now(timezone.utc).isoformat()
-            )
-        )
+        db_create_transaction({
+            "id": str(uuid.uuid4()),
+            "user_id": str(current_user["id"]),
+            "title": f"Setoran Awal Tabungan: {payload.title}",
+            "amount": payload.current_amount,
+            "type": "expense",
+            "category": "Investasi",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
 
-    return new_goal
+    return SavingsGoal(**saved_goal)
 
 @app.post("/api/savings-goals/{goal_id}/deposit", response_model=SavingsGoal)
-def deposit_to_savings_goal(goal_id: str, payload: SavingsGoalDeposit):
-    global db_savings_goals, db_transactions
-    goal = next((g for g in db_savings_goals if g.id == goal_id), None)
-    if not goal:
+def deposit_to_savings_goal(
+    goal_id: str,
+    payload: SavingsGoalDeposit,
+    current_user: dict = Depends(get_current_user)
+):
+    updated = db_deposit_savings_goal(goal_id, str(current_user["id"]), payload.amount)
+    if not updated:
         raise HTTPException(status_code=404, detail="Target tabungan tidak ditemukan")
-
-    goal.current_amount += payload.amount
-    if goal.current_amount >= goal.target_amount:
-        goal.is_completed = True
 
     if payload.deduct_from_balance:
-        db_transactions.append(
-            Transaction(
-                id=str(uuid.uuid4()),
-                title=f"Nabung Target: {goal.title}",
-                amount=payload.amount,
-                type="expense",
-                category="Investasi",
-                created_at=datetime.now(timezone.utc).isoformat()
-            )
-        )
+        db_create_transaction({
+            "id": str(uuid.uuid4()),
+            "user_id": str(current_user["id"]),
+            "title": f"Nabung Target: {updated['title']}",
+            "amount": payload.amount,
+            "type": "expense",
+            "category": "Investasi",
+            "created_at": datetime.now(timezone.utc).isoformat()
+        })
 
-    return goal
+    return SavingsGoal(**updated)
 
 @app.delete("/api/savings-goals/{goal_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_savings_goal(goal_id: str):
-    global db_savings_goals
-    goal = next((g for g in db_savings_goals if g.id == goal_id), None)
-    if not goal:
+def delete_savings_goal(
+    goal_id: str,
+    current_user: dict = Depends(get_current_user)
+):
+    success = db_delete_savings_goal(goal_id, str(current_user["id"]))
+    if not success:
         raise HTTPException(status_code=404, detail="Target tabungan tidak ditemukan")
-    db_savings_goals = [g for g in db_savings_goals if g.id != goal_id]
     return None
