@@ -29,22 +29,9 @@ def load_env_file():
 
 load_env_file()
 
-DEFAULT_SUPABASE_URL = "https://cmydpzqqslcrxjigxbyl.supabase.co"
-DEFAULT_SUPABASE_KEY = "sb_publishable_azfN3McbIL1-LQ_P3_tHdQ_csTa3czI"
-
-def resolve_supabase_key() -> str:
-    # Jika di environment ada secret key khusus yang valid dan berbeda, gunakan itu
-    for env_var in ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"]:
-        val = os.environ.get(env_var)
-        if val and isinstance(val, str):
-            clean = val.strip().strip("'\"")
-            if clean.startswith("sb_secret_") or clean.startswith("ey"):
-                return clean
-    # Selalu gunakan key publishable resmi yang terbukti valid di project ini
-    return DEFAULT_SUPABASE_KEY
-
-SUPABASE_URL = os.environ.get("SUPABASE_URL") or DEFAULT_SUPABASE_URL
-SUPABASE_KEY = resolve_supabase_key()
+# Kredensial Resmi Supabase Finora (cmydpzqqslcrxjigxbyl)
+SUPABASE_URL = "https://cmydpzqqslcrxjigxbyl.supabase.co"
+SUPABASE_KEY = "sb_publishable_azfN3McbIL1-LQ_P3_tHdQ_csTa3czI"
 
 supabase_client = None
 if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL.startswith("http"):
