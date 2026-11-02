@@ -2,16 +2,36 @@ const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const TOKEN_KEY = "finora_auth_token";
 const USER_KEY = "finora_auth_user";
 
-async function safeParseJson(res) {
-  const text = await res.text();
+export function getApiBaseUrl() {
+  return API_BASE_URL;
+}
+
+export async function checkApiHealth() {
   try {
-    return JSON.parse(text);
+    const res = await fetch(`${API_BASE_URL}/health`);
+    if (!res.ok) return { ok: false, error: `HTTP ${res.status}` };
+    const data = await res.json();
+    return { ok: true, data };
+  } catch (err) {
+    return { ok: false, error: err.message || "Tidak dapat menghubungi server" };
+  }
+}
+
+async function safeParseJson(res, endpoint = "") {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
   } catch {
     if (!res.ok) {
-      throw new Error(`Server error (${res.status}): pastikan backend FastAPI berjalan di port 8000.`);
+      const cleanSnippet = text.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim().slice(0, 160);
+      throw new Error(
+        `Server error (${res.status})${endpoint ? ` pada ${endpoint}` : ""}: ${cleanSnippet || "Koneksi backend gagal. Pastikan dev server menyala."}`
+      );
     }
     throw new Error("Server mengembalikan respons non-JSON yang tidak valid.");
   }
+  return data;
 }
 
 // ==========================================
@@ -77,7 +97,7 @@ export async function loginUser(email, password) {
     body: JSON.stringify({ email, password }),
   });
 
-  const data = await safeParseJson(res);
+  const data = await safeParseJson(res, `${API_BASE_URL}/auth/login`);
   if (!res.ok) {
     throw new Error(data.detail || "Gagal masuk. Periksa kembali email dan kata sandi Anda.");
   }
@@ -98,7 +118,7 @@ export async function registerUser(email, password, fullName) {
     }),
   });
 
-  const data = await safeParseJson(res);
+  const data = await safeParseJson(res, `${API_BASE_URL}/auth/register`);
   if (!res.ok) {
     throw new Error(data.detail || "Gagal mendaftar akun baru.");
   }
@@ -124,7 +144,7 @@ export async function fetchCurrentUser() {
       return null;
     }
 
-    const user = await safeParseJson(res);
+    const user = await safeParseJson(res, `${API_BASE_URL}/auth/me`);
     setStoredUser(user);
     return user;
   } catch {

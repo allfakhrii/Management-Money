@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Lock,
   Mail,
@@ -13,9 +13,10 @@ import {
   Loader2,
   KeyRound,
   ShieldAlert,
+  Server,
 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import { loginUser, registerUser } from "../api/auth";
+import { loginUser, registerUser, checkApiHealth, getApiBaseUrl } from "../api/auth";
 import { Button } from "./ui/Button";
 import { Badge } from "./ui/Badge";
 
@@ -195,6 +196,28 @@ export function AuthScreen({ onLoginSuccess }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [serverStatus, setServerStatus] = useState("checking"); // "checking" | "online" | "offline"
+  const [dbType, setDbType] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    async function verifyHealth() {
+      const res = await checkApiHealth();
+      if (!mounted) return;
+      if (res.ok) {
+        setServerStatus("online");
+        setDbType(res.data?.database || "connected");
+      } else {
+        setServerStatus("offline");
+      }
+    }
+    verifyHealth();
+    const interval = setInterval(verifyHealth, 6000);
+    return () => {
+      mounted = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   // State untuk animasi sukses login/register
   const [successData, setSuccessData] = useState(null);
@@ -281,6 +304,26 @@ export function AuthScreen({ onLoginSuccess }) {
         <p className="text-xs sm:text-sm text-slate-500 mt-1">
           Smart Money Dashboard & Financial Clarity
         </p>
+
+        {/* Live Server & Database Status Pill */}
+        <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors shadow-xs">
+          {serverStatus === "online" ? (
+            <span className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+              <span>Server & Database Terhubung</span>
+            </span>
+          ) : serverStatus === "offline" ? (
+            <span className="inline-flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200">
+              <span className="w-2 h-2 rounded-full bg-rose-500" />
+              <span>Koneksi Backend Terputus</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-slate-600 bg-slate-100 border-slate-200">
+              <Loader2 className="w-2.5 h-2.5 animate-spin" />
+              <span>Memeriksa status server...</span>
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Main Card Auth Container */}

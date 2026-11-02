@@ -1,4 +1,5 @@
-from fastapi import FastAPI, HTTPException, status, Query, Response, Depends, Header
+from fastapi import FastAPI, HTTPException, status, Query, Response, Depends, Header, Request
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import List, Literal, Optional, Dict, Any
@@ -11,6 +12,7 @@ import secrets
 import hmac
 import base64
 import json
+import traceback
 
 from database import (
     is_supabase_active,
@@ -28,14 +30,32 @@ from database import (
 
 app = FastAPI(title="Finora: Money Management, Auth & Savings API", version="2.1.0")
 
-# Setup CORS agar Frontend Vite dapat berkomunikasi lancar
+# Setup CORS agar Frontend Vite dan Vercel dapat berkomunikasi lancar
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Middleware untuk normalisasi prefix rute (menangani Vercel rewrite / internal route)
+@app.middleware("http")
+async def normalize_api_path(request: Request, call_next):
+    path = request.url.path
+    if not path.startswith("/api") and not path.startswith("/docs") and not path.startswith("/openapi.json"):
+        # Tambahkan prefix /api jika request masuk tanpa /api
+        request.scope["path"] = "/api" + path
+    return await call_next(request)
+
+# Global Exception Handler untuk selalu mengembalikan JSON berformat jelas
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Terjadi kesalahan internal server: {str(exc)}"}
+    )
 
 # ==========================================
 # 1. AUTENTIKASI: SECURITY & JWT HELPERS
