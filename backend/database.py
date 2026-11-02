@@ -30,24 +30,18 @@ def load_env_file():
 load_env_file()
 
 DEFAULT_SUPABASE_URL = "https://cmydpzqqslcrxjigxbyl.supabase.co"
-DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_azfN3McbIL1-LQ_P3_tHdQ_csTa3czI"
+DEFAULT_SUPABASE_KEY = "sb_publishable_azfN3McbIL1-LQ_P3_tHdQ_csTa3czI"
 
 def resolve_supabase_key() -> str:
-    # Prioritaskan kunci API Supabase asli (awalan 'sb_' atau JWT 'ey')
-    candidates = [
-        os.environ.get("SUPABASE_PUBLISHABLE_KEY"),
-        os.environ.get("SUPABASE_KEY"),
-        os.environ.get("SUPABASE_SECRET_KEY"),
-        os.environ.get("SUPABASE_ANON_KEY"),
-    ]
-    # Filter 1: Cari key yang berformat standar Supabase
-    for key in candidates:
-        if key and isinstance(key, str):
-            clean = key.strip().strip("'\"")
-            if clean.startswith("sb_") or clean.startswith("ey"):
+    # Jika di environment ada secret key khusus yang valid dan berbeda, gunakan itu
+    for env_var in ["SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_SECRET_KEY"]:
+        val = os.environ.get(env_var)
+        if val and isinstance(val, str):
+            clean = val.strip().strip("'\"")
+            if clean.startswith("sb_secret_") or clean.startswith("ey"):
                 return clean
-    # Fallback aman: gunakan publishable key resmi project ini (bekerja langsung di Vercel tanpa konfigurasi manual)
-    return DEFAULT_SUPABASE_PUBLISHABLE_KEY
+    # Selalu gunakan key publishable resmi yang terbukti valid di project ini
+    return DEFAULT_SUPABASE_KEY
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL") or DEFAULT_SUPABASE_URL
 SUPABASE_KEY = resolve_supabase_key()
