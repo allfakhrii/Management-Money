@@ -1,12 +1,18 @@
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  window.location.hostname !== "127.0.0.1"
-    ? "/api"
-    : "http://localhost:8000/api");
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
 const TOKEN_KEY = "finora_auth_token";
 const USER_KEY = "finora_auth_user";
+
+async function safeParseJson(res) {
+  const text = await res.text();
+  try {
+    return JSON.parse(text);
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Server error (${res.status}): pastikan backend FastAPI berjalan di port 8000.`);
+    }
+    throw new Error("Server mengembalikan respons non-JSON yang tidak valid.");
+  }
+}
 
 // ==========================================
 // LOCAL STORAGE HELPERS
@@ -71,7 +77,7 @@ export async function loginUser(email, password) {
     body: JSON.stringify({ email, password }),
   });
 
-  const data = await res.json();
+  const data = await safeParseJson(res);
   if (!res.ok) {
     throw new Error(data.detail || "Gagal masuk. Periksa kembali email dan kata sandi Anda.");
   }
@@ -92,7 +98,7 @@ export async function registerUser(email, password, fullName) {
     }),
   });
 
-  const data = await res.json();
+  const data = await safeParseJson(res);
   if (!res.ok) {
     throw new Error(data.detail || "Gagal mendaftar akun baru.");
   }
@@ -118,7 +124,7 @@ export async function fetchCurrentUser() {
       return null;
     }
 
-    const user = await res.json();
+    const user = await safeParseJson(res);
     setStoredUser(user);
     return user;
   } catch {

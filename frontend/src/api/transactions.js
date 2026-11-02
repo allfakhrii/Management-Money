@@ -1,12 +1,20 @@
 import { getStoredToken } from "./auth";
 
-const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
-  (typeof window !== "undefined" &&
-  window.location.hostname !== "localhost" &&
-  window.location.hostname !== "127.0.0.1"
-    ? "/api"
-    : "http://localhost:8000/api");
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api";
+
+async function safeJson(res, defaultError = "Terjadi kesalahan pada permintaan data.") {
+  const text = await res.text();
+  let data;
+  try {
+    data = JSON.parse(text);
+  } catch {
+    throw new Error(defaultError);
+  }
+  if (!res.ok) {
+    throw new Error(data?.detail || defaultError);
+  }
+  return data;
+}
 
 function getAuthHeaders(contentType = "application/json") {
   const token = getStoredToken();
@@ -36,16 +44,14 @@ export async function fetchTransactions(params = {}) {
   const res = await fetch(url, {
     headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Gagal mengambil data transaksi");
-  return res.json();
+  return safeJson(res, "Gagal mengambil data transaksi");
 }
 
 export async function fetchSummary() {
   const res = await fetch(`${API_BASE_URL}/summary`, {
     headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Gagal mengambil ringkasan keuangan");
-  return res.json();
+  return safeJson(res, "Gagal mengambil ringkasan keuangan");
 }
 
 export async function createTransaction(payload) {
@@ -54,8 +60,7 @@ export async function createTransaction(payload) {
     headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Gagal membuat transaksi baru");
-  return res.json();
+  return safeJson(res, "Gagal membuat transaksi baru");
 }
 
 export async function deleteTransaction(id) {
@@ -94,8 +99,7 @@ export async function fetchRecap(period = "monthly") {
   const res = await fetch(`${API_BASE_URL}/recap?period=${period}`, {
     headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Gagal mengambil data rekapitulasi");
-  return res.json();
+  return safeJson(res, "Gagal mengambil data rekapitulasi");
 }
 
 // ==========================================
@@ -105,8 +109,7 @@ export async function fetchSavingsGoals() {
   const res = await fetch(`${API_BASE_URL}/savings-goals`, {
     headers: getAuthHeaders(),
   });
-  if (!res.ok) throw new Error("Gagal mengambil daftar target tabungan");
-  return res.json();
+  return safeJson(res, "Gagal mengambil daftar target tabungan");
 }
 
 export async function createSavingsGoal(payload) {
@@ -115,8 +118,7 @@ export async function createSavingsGoal(payload) {
     headers: getAuthHeaders(),
     body: JSON.stringify(payload),
   });
-  if (!res.ok) throw new Error("Gagal membuat target tabungan baru");
-  return res.json();
+  return safeJson(res, "Gagal membuat target tabungan baru");
 }
 
 export async function depositToSavingsGoal(goalId, amount, deductFromBalance = true) {
@@ -125,8 +127,7 @@ export async function depositToSavingsGoal(goalId, amount, deductFromBalance = t
     headers: getAuthHeaders(),
     body: JSON.stringify({ amount, deduct_from_balance: deductFromBalance }),
   });
-  if (!res.ok) throw new Error("Gagal menyetor dana ke target tabungan");
-  return res.json();
+  return safeJson(res, "Gagal menyetor dana ke target tabungan");
 }
 
 export async function deleteSavingsGoal(goalId) {
