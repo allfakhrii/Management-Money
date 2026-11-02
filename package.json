@@ -4,6 +4,7 @@
   "private": true,
   "description": "Monorepo Web Money Management with FastAPI and React Vite",
   "scripts": {
+    "build": "npm run build --prefix frontend",
     "install:frontend": "npm install --prefix frontend",
     "install:backend": "pip install -r backend/requirements.txt",
     "install:all": "npm install && npm run install:frontend && npm run install:backend",
