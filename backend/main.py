@@ -52,9 +52,14 @@ async def normalize_api_path(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
+    err_str = str(exc)
+    if "Invalid API key" in err_str or "401" in err_str:
+        detail_msg = "Kunci API Supabase tidak valid (401). Pastikan SUPABASE_PUBLISHABLE_KEY diisi dengan kunci 'sb_publishable_...' (bukan kata sandi database)."
+    else:
+        detail_msg = f"Terjadi kesalahan internal server: {err_str}"
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Terjadi kesalahan internal server: {str(exc)}"}
+        content={"detail": detail_msg}
     )
 
 # ==========================================

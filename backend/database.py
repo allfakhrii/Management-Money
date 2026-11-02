@@ -29,13 +29,28 @@ def load_env_file():
 
 load_env_file()
 
+def resolve_supabase_key() -> Optional[str]:
+    # Prioritaskan kunci API Supabase asli (awalan 'sb_' atau JWT 'ey')
+    candidates = [
+        os.environ.get("SUPABASE_PUBLISHABLE_KEY"),
+        os.environ.get("SUPABASE_KEY"),
+        os.environ.get("SUPABASE_SECRET_KEY"),
+        os.environ.get("SUPABASE_ANON_KEY"),
+    ]
+    # Filter 1: Cari key yang berformat standar Supabase
+    for key in candidates:
+        if key and isinstance(key, str):
+            clean = key.strip().strip("'\"")
+            if clean.startswith("sb_") or clean.startswith("ey"):
+                return clean
+    # Filter 2: Jika tidak ada awalan sb_/ey, ambil yang pertama kali terdefinisi non-kosong
+    for key in candidates:
+        if key and isinstance(key, str) and key.strip():
+            return key.strip().strip("'\"")
+    return None
+
 SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = (
-    os.environ.get("SUPABASE_KEY")
-    or os.environ.get("SUPABASE_SECRET_KEY")
-    or os.environ.get("SUPABASE_PUBLISHABLE_KEY")
-    or os.environ.get("SUPABASE_ANON_KEY")
-)
+SUPABASE_KEY = resolve_supabase_key()
 
 supabase_client = None
 if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL.startswith("http"):
@@ -46,7 +61,7 @@ if SUPABASE_URL and SUPABASE_KEY and SUPABASE_URL.startswith("http"):
     except Exception as e:
         print(f"[DATABASE] Gagal terhubung ke Supabase: {e}. Menggunakan in-memory database.")
 else:
-    print("[DATABASE] SUPABASE_URL belum dikonfigurasi. Menggunakan in-memory database lokal.")
+    print("[DATABASE] SUPABASE_URL atau SUPABASE_KEY belum terpasang dengan benar. Menggunakan in-memory database lokal.")
 
 def is_supabase_active() -> bool:
     return supabase_client is not None
