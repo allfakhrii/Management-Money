@@ -16,6 +16,7 @@ import traceback
 
 from database import (
     is_supabase_active,
+    get_database_status,
     db_get_user_by_email,
     db_get_user_by_id,
     db_create_user,
@@ -52,9 +53,22 @@ async def normalize_api_path(request: Request, call_next):
 @app.exception_handler(Exception)
 async def global_exception_handler(request: Request, exc: Exception):
     traceback.print_exc()
+    err_str = str(exc)
+    # Penanganan spesifik jika Supabase Free Tier sedang di-pause / DNS mati
+    if "nodename nor servname provided" in err_str or "gaierror" in err_str:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": (
+                    "Database Supabase sedang ditidurkan (Paused) oleh Supabase karena 7 hari tidak ada aktivitas. "
+                    "Buka supabase.com, masuk ke proyek Anda, dan klik tombol 'Restore Project' untuk mengaktifkannya kembali. "
+                    "Atau klik 'Gunakan Akun Demo (1-Klik)' untuk langsung masuk menggunakan database lokal."
+                )
+            }
+        )
     return JSONResponse(
         status_code=500,
-        content={"detail": f"Terjadi kesalahan server: {str(exc)}"}
+        content={"detail": f"Terjadi kesalahan server: {err_str}"}
     )
 
 # ==========================================
@@ -238,9 +252,11 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 # ==========================================
 @app.get("/api/health")
 def health_check():
+    db_status = get_database_status()
     return {
         "status": "healthy",
-        "database": "supabase_postgresql" if is_supabase_active() else "in_memory_local",
+        "database": db_status,
+        "is_supabase_active": db_status == "supabase_postgresql",
         "timestamp": datetime.now(timezone.utc).isoformat()
     }
 

@@ -16,6 +16,7 @@
     "dev": "concurrently --kill-others-on-fail -n \"BACKEND,FRONTEND\" -c \"magenta,cyan\" \"npm run dev:backend\" \"npm run dev:frontend\""
   },
   "devDependencies": {
-    "concurrently": "^9.1.2"
+    "concurrently": "^9.1.2",
+    "vite": "^5.4.10"
   }
 }

@@ -308,10 +308,17 @@ export function AuthScreen({ onLoginSuccess }) {
         {/* Live Server & Database Status Pill */}
         <div className="mt-2.5 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium border transition-colors shadow-xs">
           {serverStatus === "online" ? (
-            <span className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border-emerald-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-              <span>Server & Database Terhubung</span>
-            </span>
+            dbType === "supabase_paused" ? (
+              <span className="inline-flex items-center gap-1.5 text-amber-800 bg-amber-50 border-amber-200">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                <span>Supabase Paused (Cadangan Lokal Aktif)</span>
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1.5 text-emerald-700 bg-emerald-50 border-emerald-200">
+                <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <span>Server & Database Terhubung</span>
+              </span>
+            )
           ) : serverStatus === "offline" ? (
             <span className="inline-flex items-center gap-1.5 text-rose-700 bg-rose-50 border-rose-200">
               <span className="w-2 h-2 rounded-full bg-rose-500" />
@@ -382,8 +389,9 @@ export function AuthScreen({ onLoginSuccess }) {
 
               {/* Error Notification Alert */}
               <AnimatePresence>
-                {error && (
+                {error ? (
                   <motion.div
+                    key="error"
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: "auto" }}
                     exit={{ opacity: 0, height: 0 }}
@@ -392,7 +400,20 @@ export function AuthScreen({ onLoginSuccess }) {
                     <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                     <div className="flex-1 font-medium leading-relaxed">{error}</div>
                   </motion.div>
-                )}
+                ) : dbType === "supabase_paused" ? (
+                  <motion.div
+                    key="paused-notice"
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="mb-4 p-3 bg-amber-50 border border-amber-200/90 rounded-xl text-amber-900 text-xs flex items-start gap-2"
+                  >
+                    <Sparkles className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+                    <div className="flex-1 leading-relaxed">
+                      <span className="font-bold">Info Database:</span> Proyek Supabase sedang di-pause (tidak aktif 7 hari). Anda tetap bisa masuk seketika dengan <strong>Akun Demo (1-Klik)</strong> di bawah.
+                    </div>
+                  </motion.div>
+                ) : null}
               </AnimatePresence>
 
               {/* Form Auth */}
